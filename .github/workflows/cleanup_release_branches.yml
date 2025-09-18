@@ -1,0 +1,53 @@
+name: Cleanup release branches
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Delete old release branches
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete branches older than latest six
+        env:
+          BRANCH_PATTERN: iqss_production_v
+        run: |
+          set -euo pipefail
+
+          git fetch --prune origin
+
+          mapfile -t branches < <(
+            git for-each-ref \
+              --sort=-creatordate \
+              --format='%(refname:lstrip=3)' \
+              "refs/remotes/origin/${BRANCH_PATTERN}*" \
+              | sed 's#^origin/##'
+          )
+
+          total=${#branches[@]}
+          if (( total <= 6 )); then
+            echo "Found $total release branches. Nothing to delete."
+            exit 0
+          fi
+
+          keep=(${branches[@]:0:6})
+          delete=(${branches[@]:6})
+
+          echo "Keeping latest ${#keep[@]} branches:"
+          printf '  %s\n' "${keep[@]}"
+
+          echo "Deleting ${#delete[@]} branches:"
+          printf '  %s\n' "${delete[@]}"
+
+          for branch in "${delete[@]}"; do
+            git push origin --delete "$branch"
+          done
